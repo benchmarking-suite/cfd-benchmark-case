@@ -201,19 +201,3 @@ cp 0.org 0
 # Calculation:
 simpleFoam 2>&1 | tee log/06_simpleFoam.log
 fi
-
-
-# Post processing:
-
-bash post_tools.sh
-
-mkdir results
-cp *.png results/.
-cp *.txt results/.
-cp -r log results/.
-zip -r results.zip results/
-
-touch done.txt
-
-
-
