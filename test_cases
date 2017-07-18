@@ -1,0 +1,6 @@
+runCase # Save every 10 timesteps
+runCase -writeAtLast # Save just at the last timestep
+runCase -writeAtLast -nIter 1000 # 1000 iterations
+runCase -nIter 1000 # 1000 iterations, save every 10 iterations
+runCase -meshLevel 2 # halves cell size
+runCase -solP ICCG # Solve for pressure using ICCG

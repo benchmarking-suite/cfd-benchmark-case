@@ -1,0 +1,219 @@
+
+source /usr/software-locale/OpenFOAM/v2.3.x/OpenFOAM-2.3.x/etc/bashrc
+
+
+
+guide() {
+
+cat << EOF
+OPTIONS:
+
+  -nCPU				    Define the number of cpus to run the simulation. If not set, the number is chosen as the maximum of the used machine.
+  -meshLevel			    Define the desired size of the mesh (as a divisor of the base value of 30 mm. 1 By default)
+  -writeAtLast			    If activated, it saves just at the last timestep (false by default)
+  -nIter			    Number of iterations (100 by default)
+  -solP				    Used to solve for pressure. GAMG by default
+  -help				    To call this usage
+
+EOF
+}
+
+guideP() {
+
+cat << EOF
+Error: invalid pressure solver.
+
+Available options are:
+
+GAMG
+ICCG
+PCG
+
+EOF
+}
+
+# Default and initial settings:
+
+nCPUs=$(ncpu)
+var="$?"
+if ! [[ $var == 0 ]]; then
+echo 'ncpu not available on the current machine. Trying with lscpu'
+nCPUs=$(( $(lscpu | awk '/^Socket/{ print $2 }') * $(lscpu | awk '/^Core/{ print $4 }') ))
+var="$?"
+fi
+if ! [[ $var == 0 ]]; then
+echo
+echo 'lscpu not available on the current machine. Trying reading proc/cpuinfo'
+nCPUs=$(grep -c processor /proc/cpuinfo)
+var="$?"
+fi
+if ! [[ $var == 0 ]]; then
+echo
+echo 'No command found to read the maximum number of CPUs on the machine. Setting 1 by default (serial computing)'
+nCPUs=1
+fi
+
+meshLevel=1
+writeAtLast=false
+nIter=100
+nSub=10 # >> To change
+# blockMesh base spacing:
+n0=3
+n1=9
+n2=19
+
+while [[ $# > 0 ]]
+do
+    key="$1"
+    shift
+
+    case ${key} in
+
+        -help | -h | --help)
+        guide
+        exit 0
+        ;;
+
+        -nCPU)
+        nCPUs="$1"
+	if ! [[ "$nCPUs" =~ ^[0-9]+$ ]]; then
+	echo "FATAL ERROR: nCPU value is not a positive integer."
+	exit 1
+	fi
+	shift
+        ;;
+
+        -meshLevel)
+        meshLevel="$1"
+	if ! [[ "$meshLevel" =~ ^[0-9]+$ ]]; then
+	echo "FATAL ERROR: meshLevel value is not a positive integer."
+	exit 1
+	fi
+	shift
+        ;;
+
+        -writeAtLast)
+        writeAtLast=true
+        ;;
+
+        -nIter)
+        nIter="$1"
+	if ! [[ "$nIter" =~ ^[0-9]+$ ]]; then
+	echo "FATAL ERROR: nIter value is not a positive integer."
+	# Da aggiungere una flag per considerare i calcoli transitori
+	exit 1
+	fi
+        shift
+        ;;
+
+        -solP)
+        solP="$1"
+        shift
+	case ${solP} in
+		PCG)
+		cp -f system/fvSolutionPCG system/fvSolution
+		;;
+		GAMG)
+		cp -f system/fvSolutionGAMG system/fvSolution
+		;;
+		ICCG)
+		cp -f system/fvSolutionICCG system/fvSolution
+		;;
+		*)
+		guideP
+		exit 1
+		;;
+	esac
+        ;;
+
+        *)
+        echo "Error.  Unknown option: $key."
+        guide
+        exit 1
+        ;;
+    esac
+done
+
+# SETUP OVERVIEW
+
+echo "# SETUP:"
+echo
+echo "	nCPU set to $nCPUs"
+echo "	meshLevel set to $meshLevel"
+echo "	writeAtLast: $writeAtLast"
+echo "	nIter set to $nIter"
+echo "	solP set to $solP"
+echo
+echo "#"
+
+# EXECUTE THE SETUP
+
+# endTime and writeTime:
+
+if [[ "$writeAtLast" == true ]]; then
+	sed -i "/endTime /c\endTime  $nIter;" system/controlDict
+	sed -i "/writeInterval/c\writeInterval $nIter;" system/controlDict
+	sed -i "/purgeWrite/c\purgeWrite 1;" system/controlDict
+	
+
+else
+	sed -i "/endTime /c\endTime  $nIter;" system/controlDict
+	sed -i "/writeInterval/c\writeInterval $nSub;" system/controlDict
+	sed -i "/purgeWrite/c\purgeWrite 0;" system/controlDict
+fi
+
+# BlockMesh size:
+
+n0N=$(expr $n0 \* $meshLevel)
+n1N=$(expr $n1 \* $meshLevel)
+n2N=$(expr $n2 \* $meshLevel)
+sed -i "/hex (0 1 2 3 4 5 6 7)/c\hex (0 1 2 3 4 5 6 7) ($n0N $n1N $n2N) simpleGrading (1 1 1)" constant/polyMesh/blockMeshDict
+
+# decomposeParDict number:
+
+sed -i "/numberOfSubdomains/c\numberOfSubdomains $nCPUs;" system/decomposeParDict
+sed -i "/n               (/c\n               (1 1 $nCPUs);" system/decomposeParDict
+
+# RUNNING OPENFOAM
+
+mkdir -p log
+
+# Block Mesh preparation:
+blockMesh
+if [[ $nCPUs -ge 2 ]]; then
+decomposePar
+# Meshing:
+mpirun -np $nCPUs  snappyHexMesh -overwrite -parallel  2>&1 | tee log/00_snappyHexMesh.log
+mpirun -np $nCPUs  renumberMesh -overwrite -parallel  2>&1 | tee log/01_renumberMesh.log
+mpirun -np $nCPUs  checkMesh -constant -parallel  2>&1 | tee log/02_checkMesh.log
+mpirun -np $nCPUs  changeDictionary -parallel  2>&1 | tee log/03_changeDictionary.log
+# Field decomposition:
+bash distribute.sh
+# Calculation:
+mpirun -np $nCPUs  simpleFoam -parallel  2>&1 | tee log/06_simpleFoam.log
+else
+snappyHexMesh -overwrite  2>&1 | tee log/00_snappyHexMesh.log
+renumberMesh -overwrite  2>&1 | tee log/01_renumberMesh.log
+checkMesh -constant   2>&1 | tee log/02_checkMesh.log
+changeDictionary   2>&1 | tee log/03_changeDictionary.log
+# Field decomposition:
+cp 0.org 0
+# Calculation:
+simpleFoam 2>&1 | tee log/06_simpleFoam.log
+fi
+
+
+# Post processing:
+
+bash post_tools.sh
+
+mkdir results
+cp *.png results/.
+cp *.txt results/.
+cp -r log results/.
+zip -r results.zip results/
+
+touch done.txt
+
+
+
