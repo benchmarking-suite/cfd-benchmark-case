@@ -1,8 +1,4 @@
 
-source /usr/software-locale/OpenFOAM/v2.3.x/OpenFOAM-2.3.x/etc/bashrc
-
-
-
 guide() {
 
 cat << EOF
