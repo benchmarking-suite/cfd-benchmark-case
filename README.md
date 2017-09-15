@@ -13,7 +13,8 @@ To run the use case move inside becnhmark folder and execute the run script (typ
 # Authors
 Andrea Quartararo (andrea.quartararo@phitecingegneria.it)
 Fabio Vicenza (fabio.vicenza@phitecingegneria.it)
-waterbox geometry provided by Gilles Besombes
+
+Waterbox geometry provided by Gilles Besombes
 
 # License
 the dataset is released under the GNU GPLv3 licence (https://www.gnu.org/licenses/gpl-3.0.en.html).  This will guarantee the full possibility of re-using the data. 
