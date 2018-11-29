@@ -193,7 +193,7 @@ renumberMesh -overwrite  2>&1 | tee log/01_renumberMesh.log
 checkMesh -constant   2>&1 | tee log/02_checkMesh.log
 changeDictionary   2>&1 | tee log/03_changeDictionary.log
 # Field decomposition:
-cp 0.org 0
+cp -r 0.org 0
 # Calculation:
 simpleFoam 2>&1 | tee log/06_simpleFoam.log
 fi
